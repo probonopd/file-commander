@@ -1,111 +1,34 @@
 language: cpp
+compiler: gcc
+sudo: require
+dist: xenial
 
-git:
-  depth: false
-
-addons:
-  sonarcloud:
-    organization: "violetgiraffe"
-    token: $SONAR_TOKEN
-
-matrix:
-  include:
-    - os: osx
-      osx_image: xcode9.4
-      compiler: clang
-    - os: linux
-      dist: xenial
-      compiler: gcc
-      services:
-        - xvfb
-
+env:
+  - CC=gcc-7 CXX=g++-7 CXX_COMPILER=g++-7 C_COMPILER=gcc-7
+  
 before_install:
-  - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then brew update; fi
-  # C++17
-  - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then sudo add-apt-repository --yes ppa:ubuntu-toolchain-r/test; fi
+  - sudo apt-get install -y software-properties-common
+  - sudo add-apt-repository ppa:ubuntu-toolchain-r/test -y # Does this install newer libstdc++? Then prepare for trouble
+  - sudo add-apt-repository ppa:beineri/opt-qt-5.10.1-xenial -y
+  - sudo apt-get update -qq
 
 install:
-  # C++17
-  - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then sudo add-apt-repository -y ppa:beineri/opt-qt-5.12.3-xenial; fi
-  - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then sudo apt-get -qy update; fi
-  - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then sudo apt-get install -qq g++-8 gcc-8; fi
-  - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-8 90; fi
-  - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-8 90; fi
-  # Qt5
-  - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then brew install qt5; fi
-  - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then brew link --force qt5; fi
-  - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then export export QTPATH=/usr/local; QMAKE=$QTPATH/bin/qmake; fi
-
-  - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then sudo apt-get install -qq qt512-meta-minimal; fi
-  - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then sudo apt-get install -qq libx11-xcb-dev libglu1-mesa-dev; fi
-  - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then export QMAKE=/opt/qt512/bin/qmake; fi
-  - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then export PATH=/opt/qt512/bin/:$PATH; fi
-
-before_script:
-  - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then gcc --version; fi
-  - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then g++ --version; fi
-
-  # linuxdeployqt
-  - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then wget -c -nv "https://github.com/probonopd/linuxdeployqt/releases/download/continuous/linuxdeployqt-continuous-x86_64.AppImage"; fi
-  - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then chmod a+x linuxdeployqt-continuous-x86_64.AppImage; fi
-  - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then unset QTDIR; unset QT_PLUGIN_PATH ; unset LD_LIBRARY_PATH; fi
-
-  - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then clang --version; fi
-  - "sh -e ./update_repository.sh"
-
-  - $QMAKE -v
+  - sudo apt-get -y install qt510base libgl1-mesa-dev g++-7
+  - source /opt/qt*/bin/qt*-env.sh
 
 script:
-# Building the main binaries
+  - qmake CONFIG+=release PREFIX=/usr
+  - make -j$(nproc)
+  - make INSTALL_ROOT=appdir -j$(nproc) install ; find appdir/
+  - wget -c -nv "https://github.com/probonopd/linuxdeployqt/releases/download/continuous/linuxdeployqt-continuous-x86_64.AppImage"
+  - chmod a+x linuxdeployqt-continuous-x86_64.AppImage
+  - ./linuxdeployqt-continuous-x86_64.AppImage appdir/usr/share/applications/*.desktop -appimage
 
-  # Linux
-  - $QMAKE -r CONFIG+=release
-  # Wraps the compilation with the Build Wrapper to generate configuration (used
-  # later by the SonarQube Scanner) into the "bw-output" folder
-  - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then build-wrapper-linux-x86-64 --out-dir . make -j; fi
-  - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then sonar-scanner; fi
-  # Linux: deploying Qt binaries
-  - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then ./linuxdeployqt-continuous-x86_64.AppImage ./bin/release/x64/FileCommander -bundle-non-qt-libs; fi
-
-  # macOS
-  - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then sh ./installer/mac/create_dmg.sh $QTPATH; fi
-
-# Test launch
-  - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then ./bin/release/x64/FileCommander --test-launch; else ./bin/release/x64/FileCommander.app/Contents/MacOS/FileCommander --test-launch; fi
-
-  # Building tests
-  - cd file-commander-core/core-tests
-  - $QMAKE -r CONFIG+=release
-  - make -j
-  - cd ../../
-
-  # Running tests
-  - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then ./linuxdeployqt-continuous-x86_64.AppImage ./bin/release/x64/fso_test -bundle-non-qt-libs; fi
-  - set -e; if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then ./bin/release/x64/fso_test; else ./bin/release/x64/fso_test.app/Contents/MacOS/fso_test; fi
-
-  - set -e; if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then ./linuxdeployqt-continuous-x86_64.AppImage ./bin/release/x64/fso_test_high_level -bundle-non-qt-libs; fi
-  - set -e; if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then ./bin/release/x64/fso_test_high_level; else ./bin/release/x64/fso_test_high_level.app/Contents/MacOS/fso_test_high_level; fi
-
-  - set -e; if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then ./linuxdeployqt-continuous-x86_64.AppImage ./bin/release/x64/operationperformer_test -bundle-non-qt-libs; fi
-  - set -e; for i in `seq 1 20`; do if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then ./bin/release/x64/operationperformer_test --std-seed $(date +%s); else ./bin/release/x64/operationperformer_test.app/Contents/MacOS/operationperformer_test --std-seed $(date +%s); fi; sleep 1; done
-
-  - set -e; if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then ./linuxdeployqt-continuous-x86_64.AppImage ./bin/release/x64/filecomparator_test -bundle-non-qt-libs; fi
-  - set -e; if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then ./bin/release/x64/filecomparator_test --std-seed $(date +%s); else ./bin/release/x64/filecomparator_test.app/Contents/MacOS/filecomparator_test --std-seed $(date +%s); fi;
-
+after_success:
+  - wget -c https://github.com/probonopd/uploadtool/raw/master/upload.sh
+  - bash upload.sh File_Commander*.AppImage*
   
-  # Set up git user name and tag this commit
-  - git config --local user.name "VioletGiraffe"
-  - git config --local user.email "violet.giraffe@noreply.github.com"
-  - export TRAVIS_TAG=${TRAVIS_TAG:-$(date +'%Y%m%d%H%M%S')-$(git log --format=%h -1)}
-  - git tag $TRAVIS_TAG
-
-deploy:
-  provider: releases
-  edge: true
-  overwrite: true
-  token: $GITHUB_TOKEN
-  file: FileCommander.dmg
-  on:
-    tags: true
-    all_branches: true
-    condition: $TRAVIS_OS_NAME = osx
+branches:
+  except:
+    # Do not build tags that we create when we upload to GitHub Releases
+    - /^(?i:continuous)/
