@@ -4,7 +4,7 @@ sudo: require
 dist: xenial
 
 env:
-  - CC=gcc-7 CXX=g++-7 CXX_COMPILER=g++-7 C_COMPILER=gcc-7
+  - CC=gcc-8 CXX=g++-8 CXX_COMPILER=g++-8 C_COMPILER=gcc-8
   
 before_install:
   - sudo apt-get install -y software-properties-common
@@ -13,7 +13,7 @@ before_install:
   - sudo apt-get update -qq
 
 install:
-  - sudo apt-get -y install qt512base libgl1-mesa-dev g++-7
+  - sudo apt-get -y install qt512base libgl1-mesa-dev g++-8
   - source /opt/qt*/bin/qt*-env.sh
 
 script:
